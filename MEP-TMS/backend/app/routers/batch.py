@@ -468,6 +468,10 @@ async def get_batch_attendance_summary(batch_id: str, current_user: dict = Depen
     db = get_db()
     
     try:
+        # Fetch total candidate count for the batch
+        candidates_res = db.table("candidates").select("id").eq("batch_id", batch_id).execute()
+        total_candidates = len(candidates_res.data) if candidates_res.data else 0
+        
         result = db.table("attendances").select("*").eq("batch_id", batch_id).execute()
         attendances = result.data
         
@@ -492,11 +496,13 @@ async def get_batch_attendance_summary(batch_id: str, current_user: dict = Depen
             att_status = attendance["status"]
             if att_status == "PRESENT":
                 date_summary[date_key]["presentCount"] += 1
-            elif att_status == "ABSENT":
-                date_summary[date_key]["absentCount"] += 1
             elif att_status == "LEAVE":
                 date_summary[date_key]["leaveCount"] += 1
         
+        # Calculate true absentCount dynamically for each date
+        for date_key, summary in date_summary.items():
+            summary["absentCount"] = max(0, total_candidates - summary["presentCount"] - summary["leaveCount"])
+            
         return [AttendanceBatchResponse(**summary) for summary in date_summary.values()]
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
