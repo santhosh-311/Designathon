@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, status, Depends, BackgroundTasks
 from typing import List
 from app.schemas.schemas import (
     BatchCreate, BatchUpdate, BatchResponse, 
-    CandidateCreate, CandidateResponse,
+    CandidateCreate, CandidateResponse, CandidateStatusUpdate,
     AttendanceBatchResponse, CurriculumGenerateRequest,
     CurriculumSuggestionResponse
 )
@@ -362,7 +362,105 @@ async def get_batch_candidates(batch_id: str, current_user: dict = Depends(get_c
     db = get_db()
     
     result = db.table("candidates").select("*").eq("batch_id", batch_id).execute()
-    return [CandidateResponse(**row_to_api(c)) for c in result.data]
+    
+    candidates_list = []
+    if result.data:
+        # Fetch users with matching email to resolve their active status
+        emails = [c["email"] for c in result.data if c.get("email")]
+        users_res = db.table("users").select("email, is_active").in_("email", emails).execute()
+        user_active_map = {u["email"]: u.get("is_active", True) for u in users_res.data} if users_res.data else {}
+        
+        for c in result.data:
+            api_c = row_to_api(c)
+            api_c["isActive"] = user_active_map.get(c.get("email"), True)
+            candidates_list.append(CandidateResponse(**api_c))
+            
+    return candidates_list
+
+@router.delete("/{batch_id}/candidates/{candidate_id}")
+async def delete_candidate(
+    batch_id: str,
+    candidate_id: str,
+    current_user: dict = Depends(has_role("COORDINATOR"))
+):
+    """Delete candidate from a batch (Coordinator only)"""
+    db = get_db()
+    
+    try:
+        # 1. Fetch candidate to get their email
+        cand_result = db.table("candidates").select("*").eq("id", candidate_id).eq("batch_id", batch_id).execute()
+        if not cand_result.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Candidate not found in this batch"
+            )
+        candidate_data = cand_result.data[0]
+        email = candidate_data.get("email")
+
+        # 2. Delete candidate row
+        db.table("candidates").delete().eq("id", candidate_id).execute()
+
+        # 3. Decrement candidates_count in batches table
+        batch_res = db.table("batches").select("candidates_count").eq("id", batch_id).execute()
+        current_count = batch_res.data[0]["candidates_count"] if batch_res.data else 0
+        db.table("batches").update({"candidates_count": max(0, current_count - 1)}).eq("id", batch_id).execute()
+
+        # 4. Remove batch_id from user's assigned_batches list
+        if email:
+            user_res = db.table("users").select("*").eq("email", email).execute()
+            if user_res.data:
+                u_data = user_res.data[0]
+                u_id = u_data["id"]
+                current_batches = u_data.get("assigned_batches", []) or []
+                if batch_id in current_batches:
+                    current_batches.remove(batch_id)
+                    db.table("users").update({"assigned_batches": current_batches}).eq("id", u_id).execute()
+
+        return {"message": "Candidate deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.put("/{batch_id}/candidates/{candidate_id}/status")
+async def update_candidate_status(
+    batch_id: str,
+    candidate_id: str,
+    status_data: CandidateStatusUpdate,
+    current_user: dict = Depends(has_role("COORDINATOR"))
+):
+    """Update candidate's active status (Coordinator only)"""
+    db = get_db()
+    
+    try:
+        # 1. Fetch candidate to get their email
+        cand_result = db.table("candidates").select("email").eq("id", candidate_id).eq("batch_id", batch_id).execute()
+        if not cand_result.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Candidate not found in this batch"
+            )
+        email = cand_result.data[0].get("email")
+
+        # 2. Update status of corresponding user
+        if not email:
+            raise HTTPException(status_code=400, detail="Candidate email is missing, cannot update status")
+            
+        user_res = db.table("users").select("id").eq("email", email).execute()
+        if not user_res.data:
+            raise HTTPException(status_code=404, detail="Corresponding user account not found")
+
+        u_id = user_res.data[0]["id"]
+        db.table("users").update({
+            "is_active": status_data.isActive,
+            "updated_at": datetime.utcnow().isoformat()
+        }).eq("id", u_id).execute()
+
+        return {"message": f"Candidate status updated successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 @router.get("/{batch_id}/attendance-summary", response_model=List[AttendanceBatchResponse])
 async def get_batch_attendance_summary(batch_id: str, current_user: dict = Depends(get_current_user)):

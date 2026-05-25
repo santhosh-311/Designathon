@@ -13,3 +13,5 @@ httpx>=0.25.2
 APScheduler>=3.10.4
 openpyxl>=3.1.2
 supabase>=2.0.0
+langgraph>=0.1.0
+langchain-google-genai>=1.0.0

@@ -116,9 +116,13 @@ class CandidateUpdate(BaseModel):
     fullName: Optional[str] = None
     phone: Optional[str] = None
 
+class CandidateStatusUpdate(BaseModel):
+    isActive: bool
+
 class CandidateResponse(CandidateBase):
     id: str
     registrationNumber: str
+    isActive: Optional[bool] = True
     createdAt: datetime
     updatedAt: datetime
 

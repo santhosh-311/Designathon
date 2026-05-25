@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Users, Calendar, BookOpen, Plus, UserPlus, FileText, CheckCircle, Info, Loader2 } from 'lucide-react';
+import { X, Users, Calendar, BookOpen, Plus, UserPlus, FileText, CheckCircle, Info, Loader2, Trash2, UserMinus, UserCheck, RotateCcw } from 'lucide-react';
 import { useBatches, Batch } from '@/context/BatchContext';
 import { useNotifications } from '@/context/NotificationContext';
 import { useAuth } from '@/context/AuthContext';
 import api from '@/services/api';
 import toast from 'react-hot-toast';
+import { motion, AnimatePresence } from 'framer-motion';
 
 interface BatchDetailsDrawerProps {
   isOpen: boolean;
@@ -19,6 +20,7 @@ interface Candidate {
   email: string;
   phone?: string;
   registrationNumber: string;
+  isActive?: boolean;
 }
 
 interface AttendanceSummary {
@@ -32,6 +34,7 @@ export default function BatchDetailsDrawer({ isOpen, onClose, batch }: BatchDeta
   const { addNotification } = useNotifications();
   const { generateAssessment } = useBatches();
   const { user } = useAuth();
+  const isCoordinator = user?.role === 'COORDINATOR';
   const [activeTab, setActiveTab] = useState<'trainees' | 'attendance' | 'curriculum' | 'assessment'>('trainees');
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [attendance, setAttendance] = useState<AttendanceSummary[]>([]);
@@ -57,6 +60,25 @@ export default function BatchDetailsDrawer({ isOpen, onClose, batch }: BatchDeta
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [addingCandidate, setAddingCandidate] = useState(false);
+  
+  // Custom Confirmation Pop-up State
+  const [showConfirm, setShowConfirm] = useState<{
+    type: 'delete' | 'status';
+    candidateId: string;
+    fullName: string;
+    currentActive?: boolean;
+  } | null>(null);
+
+  // Attendance Details Popup State
+  const [selectedAttendanceDate, setSelectedAttendanceDate] = useState<string | null>(null);
+  const [attendanceDetailsLoading, setAttendanceDetailsLoading] = useState(false);
+  const [attendanceDetails, setAttendanceDetails] = useState<{
+    present: Candidate[];
+    absent: Candidate[];
+    leave: Candidate[];
+  } | null>(null);
+  const [activeDetailTab, setActiveDetailTab] = useState<'present' | 'absent' | 'leave'>('present');
+  const [hoveredAttendanceRow, setHoveredAttendanceRow] = useState<number | null>(null);
 
   // Load batch candidates
   const fetchCandidates = async () => {
@@ -135,6 +157,105 @@ export default function BatchDetailsDrawer({ isOpen, onClose, batch }: BatchDeta
       toast.error(err.response?.data?.detail || 'Failed to add candidate to batch.');
     } finally {
       setAddingCandidate(false);
+    }
+  };
+
+  const triggerDeleteConfirm = (candidateId: string, fullName: string) => {
+    setShowConfirm({
+      type: 'delete',
+      candidateId,
+      fullName
+    });
+  };
+
+  const triggerStatusConfirm = (candidateId: string, fullName: string, currentActive: boolean) => {
+    setShowConfirm({
+      type: 'status',
+      candidateId,
+      fullName,
+      currentActive
+    });
+  };
+
+  const confirmDeleteAction = async () => {
+    if (!batch || !showConfirm) return;
+    const { candidateId, fullName } = showConfirm;
+    setShowConfirm(null);
+
+    try {
+      toast.loading('Deleting candidate...', { id: 'delete-candidate' });
+      await api.delete(`/batch/${batch._id}/candidates/${candidateId}`);
+      toast.success('Candidate deleted successfully!', { id: 'delete-candidate' });
+      addNotification('SYSTEM', `Trainee "${fullName}" has been removed from batch "${batch.batchName}".`);
+      await fetchCandidates();
+    } catch (err: any) {
+      console.error('Failed to delete candidate:', err);
+      toast.error(err.response?.data?.detail || 'Failed to delete candidate.', { id: 'delete-candidate' });
+    }
+  };
+
+  const confirmStatusAction = async () => {
+    if (!batch || !showConfirm) return;
+    const { candidateId, fullName, currentActive } = showConfirm;
+    setShowConfirm(null);
+    const nextActive = !currentActive;
+
+    try {
+      toast.loading(`Updating candidate status...`, { id: 'status-candidate' });
+      await api.put(`/batch/${batch._id}/candidates/${candidateId}/status`, {
+        isActive: nextActive
+      });
+      toast.success(`Candidate ${nextActive ? 'activated' : 'deactivated'} successfully!`, { id: 'status-candidate' });
+      addNotification('SYSTEM', `Trainee "${fullName}" status set to ${nextActive ? 'Active' : 'Inactive'}.`);
+      await fetchCandidates();
+    } catch (err: any) {
+      console.error('Failed to update candidate status:', err);
+      toast.error(err.response?.data?.detail || 'Failed to update status.', { id: 'status-candidate' });
+    }
+  };
+
+  const handleAttendanceDateClick = async (dateStr: string) => {
+    if (!batch) return;
+    
+    const clickedDateKey = dateStr.substring(0, 10);
+    setSelectedAttendanceDate(dateStr);
+    setAttendanceDetailsLoading(true);
+    setActiveDetailTab('present');
+    
+    try {
+      const response = await api.get(`/attendance/batch/${batch._id}`);
+      const allRecords = response.data;
+      
+      const presentees: Candidate[] = [];
+      const absentees: Candidate[] = [];
+      const leavees: Candidate[] = [];
+      
+      candidates.forEach(cand => {
+        const record = allRecords.find((r: any) => r.candidateId === cand.id && r.date.substring(0, 10) === clickedDateKey);
+        if (record) {
+          if (record.status === 'PRESENT') {
+            presentees.push(cand);
+          } else if (record.status === 'LEAVE') {
+            leavees.push(cand);
+          } else {
+            absentees.push(cand);
+          }
+        } else {
+          absentees.push(cand);
+        }
+      });
+      
+      setAttendanceDetails({
+        present: presentees,
+        absent: absentees,
+        leave: leavees
+      });
+    } catch (err) {
+      console.error('Failed to load attendance details:', err);
+      toast.error('Failed to load attendance details list.');
+      setSelectedAttendanceDate(null);
+    } finally {
+      setAttendanceDetailsLoading(false);
     }
   };
 
@@ -349,28 +470,145 @@ export default function BatchDetailsDrawer({ isOpen, onClose, batch }: BatchDeta
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  {candidates.map((candidate) => (
-                    <div 
-                      key={candidate.id}
-                      style={{
-                        padding: 14, borderRadius: 12, background: 'rgba(255,255,255,0.02)',
-                        border: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between',
-                        alignItems: 'center'
-                      }}
-                    >
-                      <div>
-                        <div style={{ fontSize: 13.5, fontWeight: 700, color: '#ffffff' }}>{candidate.fullName}</div>
-                        <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>{candidate.email}</div>
-                        {candidate.phone && <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{candidate.phone}</div>}
-                      </div>
-                      <span style={{ 
-                        fontSize: 10.5, fontFamily: 'monospace', background: 'rgba(255,255,255,0.05)',
-                        padding: '4px 8px', borderRadius: 6, color: 'var(--powder-blue)', fontWeight: 600
-                      }}>
-                        {candidate.registrationNumber}
-                      </span>
+                  {/* Coordinator Swipe Instruction */}
+                  {isCoordinator && (
+                    <div style={{ 
+                      display: 'flex', alignItems: 'center', gap: 6, 
+                      background: 'rgba(112, 214, 255, 0.04)', 
+                      border: '1px solid rgba(112, 214, 255, 0.1)',
+                      padding: '8px 12px', borderRadius: 8, fontSize: 11.5, color: 'var(--powder-blue)'
+                    }}>
+                      <Info size={14} />
+                      <span><strong>Coordinator Action:</strong> Swipe a trainee card left to disable or delete.</span>
                     </div>
-                  ))}
+                  )}
+
+                  <AnimatePresence>
+                    {candidates.map((candidate) => (
+                      <div 
+                        key={candidate.id}
+                        style={{
+                          position: 'relative',
+                          width: '100%',
+                          height: 80, // Fixed height for absolute background alignment
+                          background: '#0f172a', // Solid base background under swiped card
+                          borderRadius: 12,
+                          overflow: 'hidden'
+                        }}
+                      >
+                        {/* Hidden action buttons (revealed on drag left) */}
+                        {isCoordinator && (
+                          <div style={{
+                            position: 'absolute', right: 0, top: 0, bottom: 0, width: 140,
+                            display: 'flex', zIndex: 1, height: '100%'
+                          }}>
+                            {/* Deactivate/Activate Status Button */}
+                            <button
+                              onClick={() => triggerStatusConfirm(candidate.id, candidate.fullName, candidate.isActive !== false)}
+                              style={{
+                                width: 70, height: '100%', border: 'none', cursor: 'pointer',
+                                background: candidate.isActive !== false ? 'var(--pale-orange)' : 'var(--powder-blue)',
+                                color: '#0f172a', display: 'flex', flexDirection: 'column', 
+                                alignItems: 'center', justifyContent: 'center', gap: 4, transition: 'opacity 0.2s'
+                              }}
+                              onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.9'; }}
+                              onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; }}
+                            >
+                              {candidate.isActive !== false ? <UserMinus size={16} /> : <UserCheck size={16} />}
+                              <span style={{ fontSize: 9, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                                {candidate.isActive !== false ? 'Disable' : 'Enable'}
+                              </span>
+                            </button>
+                            
+                            {/* Delete Candidate Button */}
+                            <button
+                              onClick={() => triggerDeleteConfirm(candidate.id, candidate.fullName)}
+                              style={{
+                                width: 70, height: '100%', border: 'none', cursor: 'pointer',
+                                background: '#ef4444', color: '#ffffff', display: 'flex', 
+                                flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4,
+                                transition: 'opacity 0.2s'
+                              }}
+                              onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.9'; }}
+                              onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; }}
+                            >
+                              <Trash2 size={16} />
+                              <span style={{ fontSize: 9, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                                Delete
+                              </span>
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Drag Card layer (solid background to prevent action button leaks) */}
+                        <motion.div
+                          drag={isCoordinator ? "x" : false}
+                          dragDirectionLock
+                          dragConstraints={{ left: -140, right: 0 }}
+                          dragElastic={{ left: 0.1, right: 0.02 }}
+                          whileDrag={{ scale: 1.005, boxShadow: '0 4px 12px rgba(0,0,0,0.2)' }}
+                          style={{
+                            position: 'relative',
+                            zIndex: 2,
+                            width: '100%',
+                            height: '100%',
+                            padding: '14px 16px',
+                            borderRadius: 12,
+                            background: '#1e293b', // Always completely solid slate background
+                            border: '1px solid var(--border-color)',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            cursor: isCoordinator ? 'grab' : 'default',
+                            boxSizing: 'border-box'
+                          }}
+                        >
+                          {/* Inner content container (dims dynamically without leaking background options) */}
+                          <div style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            width: '100%',
+                            opacity: candidate.isActive !== false ? 1 : 0.6,
+                            transition: 'opacity 0.2s'
+                          }}>
+                            <div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <span style={{ 
+                                  fontSize: 13.5, 
+                                  fontWeight: 700, 
+                                  color: candidate.isActive !== false ? '#ffffff' : 'var(--text-secondary)',
+                                  textDecoration: candidate.isActive !== false ? 'none' : 'line-through'
+                                }}>
+                                  {candidate.fullName}
+                                </span>
+                                {candidate.isActive === false && (
+                                  <span style={{
+                                    fontSize: 8.5, fontWeight: 800, background: 'rgba(255, 160, 89, 0.15)',
+                                    color: 'var(--pale-orange)', padding: '2px 6px', borderRadius: 4,
+                                    border: '1px solid rgba(255, 160, 89, 0.3)'
+                                  }}>
+                                    INACTIVE
+                                  </span>
+                                )}
+                              </div>
+                              <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>{candidate.email}</div>
+                              {candidate.phone && <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{candidate.phone}</div>}
+                            </div>
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <span style={{ 
+                                fontSize: 10.5, fontFamily: 'monospace', background: 'rgba(255,255,255,0.05)',
+                                padding: '4px 8px', borderRadius: 6, color: 'var(--powder-blue)', fontWeight: 600
+                              }}>
+                                {candidate.registrationNumber}
+                              </span>
+                            </div>
+                          </div>
+                        </motion.div>
+                      </div>
+                    ))}
+                  </AnimatePresence>
                 </div>
               )}
             </div>
@@ -399,15 +637,23 @@ export default function BatchDetailsDrawer({ isOpen, onClose, batch }: BatchDeta
                   {attendance.map((day, i) => (
                     <div 
                       key={i}
+                      onClick={() => handleAttendanceDateClick(day.date)}
+                      onMouseEnter={() => setHoveredAttendanceRow(i)}
+                      onMouseLeave={() => setHoveredAttendanceRow(null)}
                       style={{
-                        padding: 14, borderRadius: 12, background: 'rgba(255,255,255,0.02)',
-                        border: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between',
-                        alignItems: 'center'
+                        padding: 14, borderRadius: 12, 
+                        background: hoveredAttendanceRow === i ? 'rgba(112, 214, 255, 0.04)' : 'rgba(255,255,255,0.02)',
+                        border: hoveredAttendanceRow === i ? '1px solid rgba(112, 214, 255, 0.35)' : '1px solid var(--border-color)', 
+                        display: 'flex', justifyContent: 'space-between',
+                        alignItems: 'center', cursor: 'pointer',
+                        transform: hoveredAttendanceRow === i ? 'translateY(-1px)' : 'translateY(0)',
+                        boxShadow: hoveredAttendanceRow === i ? '0 4px 12px rgba(112, 214, 255, 0.05)' : 'none',
+                        transition: 'all 0.2s ease'
                       }}
                     >
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                         <Calendar size={16} color="var(--powder-blue)" />
-                        <span style={{ fontSize: 13.5, fontWeight: 700, color: '#ffffff' }}>
+                        <span style={{ fontSize: 13.5, fontWeight: 700, color: hoveredAttendanceRow === i ? 'var(--powder-blue)' : '#ffffff', transition: 'color 0.2s' }}>
                           {new Date(day.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
                         </span>
                       </div>
@@ -637,6 +883,267 @@ export default function BatchDetailsDrawer({ isOpen, onClose, batch }: BatchDeta
           to { transform: translateX(0); }
         }
       `}</style>
+
+      {/* Custom Confirmation Dialog Overlay */}
+      {showConfirm && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(10, 15, 30, 0.75)',
+          backdropFilter: 'blur(6px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 2000,
+          animation: 'fadeIn 0.2s ease-out'
+        }}>
+          <div style={{
+            background: '#121824',
+            border: '1px solid var(--border-color)',
+            borderRadius: 16,
+            padding: 24,
+            width: '100%',
+            maxWidth: 380,
+            boxShadow: '0 24px 48px rgba(0, 0, 0, 0.6)',
+            color: '#f8fafc',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 18,
+            boxSizing: 'border-box'
+          }}>
+            {/* Header / Icon */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{
+                width: 44,
+                height: 44,
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: showConfirm.type === 'delete' ? 'rgba(239, 68, 68, 0.1)' : 'rgba(112, 214, 255, 0.1)',
+                color: showConfirm.type === 'delete' ? '#ef4444' : 'var(--powder-blue)'
+              }}>
+                {showConfirm.type === 'delete' ? <Trash2 size={22} /> : (showConfirm.currentActive ? <UserMinus size={22} /> : <UserCheck size={22} />)}
+              </div>
+              <div>
+                <h3 style={{ fontSize: 16, fontWeight: 800, fontFamily: 'Outfit, sans-serif', color: '#ffffff', margin: 0 }}>
+                  {showConfirm.type === 'delete' ? 'Delete Candidate?' : (showConfirm.currentActive ? 'Deactivate Candidate?' : 'Activate Candidate?')}
+                </h3>
+              </div>
+            </div>
+
+            {/* Description Text */}
+            <p style={{ fontSize: 13.5, color: 'var(--text-secondary)', lineHeight: 1.5, margin: 0 }}>
+              {showConfirm.type === 'delete' ? (
+                <>Are you sure you want to permanently delete <strong>{showConfirm.fullName}</strong>? This action cannot be undone and will remove them from the batch.</>
+              ) : (
+                showConfirm.currentActive ? (
+                  <>Are you sure you want to deactivate <strong>{showConfirm.fullName}</strong>? They will be unable to log in to their account.</>
+                ) : (
+                  <>Are you sure you want to activate <strong>{showConfirm.fullName}</strong>? They will regain full login access to their account.</>
+                )
+              )}
+            </p>
+
+            {/* Buttons Layout */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 4 }}>
+              {/* Cancel Button */}
+              <button
+                onClick={() => setShowConfirm(null)}
+                style={{
+                  padding: '10px 18px',
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  border: 'none',
+                  borderRadius: 10,
+                  fontSize: 12.5,
+                  fontWeight: 700,
+                  color: 'var(--text-secondary)',
+                  cursor: 'pointer',
+                  transition: 'background 0.2s'
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'; }}
+              >
+                Cancel
+              </button>
+
+              {/* Confirm Action Button */}
+              <button
+                onClick={showConfirm.type === 'delete' ? confirmDeleteAction : confirmStatusAction}
+                style={{
+                  padding: '10px 18px',
+                  background: showConfirm.type === 'delete' ? '#ef4444' : (showConfirm.currentActive ? 'var(--pale-orange)' : 'var(--powder-blue)'),
+                  color: showConfirm.type === 'delete' ? '#ffffff' : '#0f172a',
+                  border: 'none',
+                  borderRadius: 10,
+                  fontSize: 12.5,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  transition: 'opacity 0.2s'
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.9'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; }}
+              >
+                {showConfirm.type === 'delete' ? 'Delete' : (showConfirm.currentActive ? 'Deactivate' : 'Activate')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Attendance Details Modal Overlay */}
+      {selectedAttendanceDate && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(10, 15, 30, 0.8)',
+          backdropFilter: 'blur(6px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1900,
+          animation: 'fadeIn 0.2s ease-out'
+        }}>
+          <div style={{
+            background: '#121824',
+            border: '1px solid var(--border-color)',
+            borderRadius: 16,
+            padding: 24,
+            width: '100%',
+            maxWidth: 440,
+            maxHeight: '85vh',
+            boxShadow: '0 24px 48px rgba(0, 0, 0, 0.6)',
+            color: '#f8fafc',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 16,
+            boxSizing: 'border-box'
+          }}>
+            {/* Modal Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div>
+                <span style={{ 
+                  fontSize: 10, fontWeight: 700, color: 'var(--powder-blue)', 
+                  textTransform: 'uppercase', letterSpacing: 1.5, display: 'block', marginBottom: 4
+                }}>
+                  Attendance Log
+                </span>
+                <h3 style={{ fontSize: 16, fontWeight: 800, fontFamily: 'Outfit, sans-serif', color: '#ffffff', margin: 0 }}>
+                  {new Date(selectedAttendanceDate).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+                </h3>
+              </div>
+              <button 
+                onClick={() => { setSelectedAttendanceDate(null); setAttendanceDetails(null); }}
+                style={{
+                  background: 'rgba(255, 255, 255, 0.05)', border: 'none', cursor: 'pointer',
+                  color: 'var(--text-secondary)', width: 32, height: 32, borderRadius: '50%',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s'
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'; e.currentTarget.style.color = '#ffffff'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'; e.currentTarget.style.color = 'var(--text-secondary)'; }}
+              >
+                <X size={16} style={{ margin: 'auto' }} />
+              </button>
+            </div>
+
+            {/* Modal Body / Loading State */}
+            {attendanceDetailsLoading || !attendanceDetails ? (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px 0', gap: 12 }}>
+                <Loader2 size={32} style={{ animation: 'spin 1s linear infinite', color: 'var(--powder-blue)' }} />
+                <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Loading logs details...</span>
+              </div>
+            ) : (
+              <>
+                {/* Tab selector */}
+                <div style={{
+                  display: 'flex', 
+                  borderBottom: '1px solid var(--border-color)',
+                  background: '#121824'
+                }}>
+                  {(['present', 'absent', 'leave'] as const).map((tab) => {
+                    const count = attendanceDetails[tab].length;
+                    const isActive = activeDetailTab === tab;
+                    
+                    let tabColor = 'var(--powder-blue)';
+                    if (tab === 'absent') tabColor = '#ff6b6b';
+                    else if (tab === 'leave') tabColor = 'var(--yellow)';
+
+                    return (
+                      <button
+                        key={tab}
+                        onClick={() => setActiveDetailTab(tab)}
+                        style={{
+                          flex: 1,
+                          padding: '10px 0', background: 'transparent', border: 'none',
+                          color: isActive ? tabColor : 'var(--text-secondary)',
+                          fontSize: 12, fontWeight: 700, cursor: 'pointer', position: 'relative',
+                          transition: 'color 0.2s'
+                        }}
+                      >
+                        <span style={{ textTransform: 'capitalize' }}>{tab}</span> ({count})
+                        {isActive && (
+                          <div style={{
+                            position: 'absolute', bottom: -1, left: 10, right: 10, height: 2,
+                            background: tabColor, boxShadow: `0 0 6px ${tabColor}`
+                          }} />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Trainee Details scrolling list */}
+                <div style={{ 
+                  flex: 1, 
+                  overflowY: 'auto', 
+                  maxHeight: '40vh', 
+                  display: 'flex', 
+                  flexDirection: 'column', 
+                  gap: 10,
+                  paddingRight: 4
+                }}>
+                  {attendanceDetails[activeDetailTab].length === 0 ? (
+                    <div style={{
+                      padding: '32px 16px', textAlign: 'center', background: 'rgba(255,255,255,0.01)',
+                      borderRadius: 12, border: '1px dashed var(--border-color)', margin: '10px 0'
+                    }}>
+                      <Info size={28} color="var(--text-secondary)" style={{ margin: '0 auto 8px' }} />
+                      <p style={{ fontSize: 12, color: 'var(--text-secondary)', margin: 0 }}>
+                        No candidates found in this list.
+                      </p>
+                    </div>
+                  ) : (
+                    attendanceDetails[activeDetailTab].map((cand) => (
+                      <div 
+                        key={cand.id}
+                        style={{
+                          padding: '12px 14px', borderRadius: 10, background: 'rgba(255,255,255,0.02)',
+                          border: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between',
+                          alignItems: 'center'
+                        }}
+                      >
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: '#ffffff' }}>{cand.fullName}</div>
+                          <div style={{ fontSize: 10.5, color: 'var(--text-secondary)', marginTop: 2 }}>{cand.email}</div>
+                        </div>
+                        
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ 
+                            fontSize: 9.5, fontFamily: 'monospace', background: 'rgba(255,255,255,0.05)',
+                            padding: '3px 6px', borderRadius: 4, color: 'var(--powder-blue)', fontWeight: 600
+                          }}>
+                            {cand.registrationNumber}
+                          </span>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>,
     document.body
   );
