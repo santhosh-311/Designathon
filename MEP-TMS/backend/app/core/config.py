@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     
     # Server
     API_V1_STR: str = "/api/v1"
+    CORS_ORIGINS: str = os.getenv("CORS_ORIGINS", "")
     
     # Supabase
     SUPABASE_URL: str = os.getenv("SUPABASE_URL", "")

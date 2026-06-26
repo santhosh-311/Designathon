@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ShieldAlert, Lock, Eye, EyeOff, KeyRound } from 'lucide-react';
+import { ShieldAlert, Lock, Eye, EyeOff, KeyRound, X } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import api from '@/services/api';
 import toast from 'react-hot-toast';
@@ -66,28 +66,57 @@ export default function FirstTimePasswordReset() {
   };
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      width: '100%',
+    <div className="modal-overlay" style={{
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      padding: '20px',
-      background: 'radial-gradient(circle at 10% 20%, rgba(112, 214, 255, 0.08) 0%, transparent 40%), radial-gradient(circle at 90% 80%, rgba(255, 160, 89, 0.06) 0%, transparent 45%), linear-gradient(135deg, #0d0f12 0%, #15181e 100%)',
+      backdropFilter: 'blur(12px) saturate(180%)',
       color: 'var(--text-primary)',
-      fontFamily: 'Plus Jakarta Sans, sans-serif'
+      fontFamily: 'Plus Jakarta Sans, sans-serif',
+      padding: '20px'
     }}>
-      <div className="card card-glow-orange fade-in" style={{
-        maxWidth: '520px',
+      <div className="card fade-in" style={{
+        maxWidth: '480px',
         width: '100%',
-        padding: '40px',
-        background: 'rgba(22, 26, 33, 0.85)',
-        backdropFilter: 'blur(20px)',
-        border: '1px solid rgba(255, 255, 255, 0.08)',
-        borderRadius: '28px',
-        boxShadow: '0 20px 50px rgba(0, 0, 0, 0.4)'
+        padding: '36px',
+        background: 'var(--bg-card)',
+        border: '1px solid var(--border-color)',
+        borderRadius: '24px',
+        boxShadow: 'var(--shadow-card)',
+        position: 'relative'
       }}>
-        {/* Warning Badge */}
+        {/* Close Button X */}
+        <button
+          type="button"
+          onClick={() => updateUser({ isFirstLogin: false })}
+          style={{
+            position: 'absolute',
+            right: '20px',
+            top: '20px',
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            color: 'var(--text-secondary)',
+            transition: 'all 0.2s ease',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '6px',
+            borderRadius: '50%',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.color = 'var(--text-primary)';
+            e.currentTarget.style.background = 'var(--powder-blue-glow)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.color = 'var(--text-secondary)';
+            e.currentTarget.style.background = 'none';
+          }}
+        >
+          <X size={18} />
+        </button>
+
+        {/* Info Badge */}
         <div style={{
           display: 'flex',
           justifyContent: 'center',
@@ -97,26 +126,26 @@ export default function FirstTimePasswordReset() {
             width: '64px',
             height: '64px',
             borderRadius: '20px',
-            background: 'rgba(255, 160, 89, 0.12)',
-            border: '2px solid var(--pale-orange)',
+            background: 'var(--powder-blue-glow)',
+            border: '2px solid var(--powder-blue)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            boxShadow: '0 8px 24px rgba(255, 160, 89, 0.25)'
+            boxShadow: '0 8px 24px var(--powder-blue-glow)'
           }}>
-            <ShieldAlert size={32} color="var(--pale-orange)" />
+            <KeyRound size={32} color="var(--powder-blue)" />
           </div>
         </div>
 
         {/* Header Text */}
         <h2 style={{
-          fontSize: '26px',
+          fontSize: '24px',
           fontWeight: 800,
           textAlign: 'center',
           color: 'var(--text-primary)',
           letterSpacing: '-0.5px'
         }}>
-          Mandatory Password Update
+          Update Your Password
         </h2>
         <p style={{
           fontSize: '14px',
@@ -125,7 +154,7 @@ export default function FirstTimePasswordReset() {
           marginTop: '10px',
           lineHeight: '1.6'
         }}>
-          Welcome, <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{user?.fullName}</span>! Because this is your first time logging in, you must change your temporary password immediately to activate and secure your account.
+          Welcome, <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{user?.fullName}</span>! We recommend updating your temporary password to secure your account. You can do this now, or skip and change it later from your profile settings.
         </p>
 
         {/* Form */}
@@ -252,9 +281,7 @@ export default function FirstTimePasswordReset() {
           </div>
 
           {/* Password complexity hints */}
-          <div style={{
-            background: 'rgba(255, 255, 255, 0.02)',
-            border: '1px solid rgba(255, 255, 255, 0.04)',
+          <div className="glass-recessed" style={{
             borderRadius: '12px',
             padding: '12px 16px',
             display: 'flex',
@@ -276,7 +303,7 @@ export default function FirstTimePasswordReset() {
             </div>
           </div>
 
-          {/* Submit / Logout Actions */}
+          {/* Submit / Dismiss Actions */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '10px' }}>
             <button
               type="submit"
@@ -297,23 +324,22 @@ export default function FirstTimePasswordReset() {
                   Updating Password...
                 </>
               ) : (
-                'Activate Account'
+                'Update Password'
               )}
             </button>
 
             <button
               type="button"
-              onClick={logout}
+              onClick={() => updateUser({ isFirstLogin: false })}
               className="btn-secondary"
               style={{
                 width: '100%',
                 justifyContent: 'center',
                 height: '46px',
-                fontSize: '14px',
-                border: '1px solid rgba(255, 255, 255, 0.08)'
+                fontSize: '14px'
               }}
             >
-              Cancel & Sign Out
+              Skip for Now
             </button>
           </div>
 

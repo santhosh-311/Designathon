@@ -2,6 +2,7 @@ import os
 import json
 from app.core.database import get_db
 from app.core.config import settings
+# Force reload of settings config
 
 SETTINGS_FILE = os.path.join(os.path.dirname(__file__), "system_settings.json")
 

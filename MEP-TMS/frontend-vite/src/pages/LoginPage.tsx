@@ -529,34 +529,84 @@ export default function LoginPage({ initialFlipped = false }: LoginPageProps) {
           top: 24,
           right: 24,
           zIndex: 50,
-          width: 44,
-          height: 44,
-          borderRadius: 14,
-          background: 'var(--bg-card)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
+          width: 64, height: 34, borderRadius: 17,
+          background: theme === 'dark' ? 'rgba(15, 23, 42, 0.4)' : 'rgba(226, 232, 240, 0.6)',
+          border: theme === 'dark' ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(15, 23, 42, 0.08)',
+          display: 'flex', alignItems: 'center',
           cursor: 'pointer',
-          border: '1px solid var(--border-color)',
           backdropFilter: 'var(--card-blur)',
-          boxShadow: 'var(--shadow-card)',
+          boxShadow: theme === 'dark' 
+            ? 'inset 0 2px 4px rgba(0,0,0,0.4), 0 1px 1px rgba(255,255,255,0.05)'
+            : 'inset 0 2px 4px rgba(0,0,0,0.06), 0 1px 1px rgba(255,255,255,0.8)',
           transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+          padding: 0,
+          overflow: 'hidden',
         }}
         onMouseEnter={(e) => {
-          e.currentTarget.style.transform = 'scale(1.02)';
-          e.currentTarget.style.borderColor = 'var(--powder-blue)';
+          e.currentTarget.style.transform = 'scale(1.05)';
+          e.currentTarget.style.borderColor = theme === 'dark' ? 'rgba(255, 255, 255, 0.2)' : 'rgba(15, 23, 42, 0.15)';
         }}
         onMouseLeave={(e) => {
           e.currentTarget.style.transform = 'scale(1)';
-          e.currentTarget.style.borderColor = 'var(--border-color)';
+          e.currentTarget.style.borderColor = theme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(15, 23, 42, 0.08)';
         }}
         title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} Mode`}
       >
-        {theme === 'dark' ? (
-          <Sun size={20} color="var(--yellow)" />
-        ) : (
-          <Moon size={20} color="var(--pale-orange)" />
-        )}
+        {/* Background Sun Icon (visible in dark mode when Moon knob moves to the right) */}
+        <div style={{
+          position: 'absolute',
+          left: 10,
+          top: '50%',
+          transform: `translateY(-50%) ${theme === 'dark' ? 'scale(1)' : 'scale(0.8)'}`,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          opacity: theme === 'dark' ? 0.4 : 0,
+          transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+          pointerEvents: 'none',
+        }}>
+          <Sun size={14} color="#94a3b8" />
+        </div>
+
+        {/* Background Moon Icon (visible in light mode when Sun knob is on the left) */}
+        <div style={{
+          position: 'absolute',
+          right: 10,
+          top: '50%',
+          transform: `translateY(-50%) ${theme === 'light' ? 'scale(1)' : 'scale(0.8)'}`,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          opacity: theme === 'light' ? 0.5 : 0,
+          transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+          pointerEvents: 'none',
+        }}>
+          <Moon size={14} color="#64748b" />
+        </div>
+
+        {/* Sliding Knob */}
+        <div
+          style={{
+            width: 26, height: 26, borderRadius: '50%',
+            background: theme === 'dark' 
+              ? 'linear-gradient(135deg, #1e293b, #0f172a)' 
+              : 'linear-gradient(135deg, #ffffff, #f8fafc)',
+            position: 'absolute',
+            left: 4,
+            transform: theme === 'dark' ? 'translateX(30px)' : 'translateX(0px)',
+            transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), background 0.3s ease, box-shadow 0.3s ease',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            boxShadow: theme === 'dark'
+              ? '0 2px 8px rgba(0, 0, 0, 0.5), inset 0 1px 1px rgba(255, 255, 255, 0.1)'
+              : '0 2px 8px rgba(15, 23, 42, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.9)',
+          }}
+        >
+          {theme === 'dark' ? (
+            <Moon size={14} color="#fcd34d" strokeWidth={2.5} style={{ filter: 'drop-shadow(0 0 2px rgba(252, 211, 77, 0.35))' }} />
+          ) : (
+            <Sun size={14} color="#f97316" strokeWidth={2.5} style={{ filter: 'drop-shadow(0 0 2px rgba(249, 115, 22, 0.25))' }} />
+          )}
+        </div>
       </div>
 
       <Outlet />

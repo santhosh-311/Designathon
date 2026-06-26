@@ -24,8 +24,12 @@ class Slide(BaseModel):
     title: str = Field(description="The title of the slide (e.g. 'Lesson Objectives', 'Core Concepts', 'Code Examples', 'Key takeaways')")
     bullets: List[str] = Field(description="3 to 5 bullet points explaining this slide's core concepts. Code snippets can be formatted in markdown code blocks.")
 
-class SubtopicSlides(BaseModel):
+class TopicSubtopicSlides(BaseModel):
+    name: str = Field(description="The name of the subtopic")
     slides: List[Slide] = Field(description="List of slides. MUST start with 'Lesson Objectives' and end with 'Key takeaways'. Must have 2-4 content slides in between.")
+
+class TopicSlides(BaseModel):
+    subtopics: List[TopicSubtopicSlides] = Field(description="List of slides grouped by subtopic")
 
 # ============ Helpers ============
 def parse_batch_topics(topics_list: List[str]) -> List[dict]:
@@ -117,69 +121,92 @@ Your task is to generate highly educational, structured, and visually engaging t
         temperature=temperature
     )
     
-    # Enforce structured output matching the Slide models list
-    structured_llm = llm.with_structured_output(SubtopicSlides)
+    # Enforce structured output matching the TopicSlides schema
+    structured_llm = llm.with_structured_output(TopicSlides)
     
     # Concurrency limit to avoid API rate limits
-    sem = asyncio.Semaphore(5)
+    sem = asyncio.Semaphore(3)
     
-    async def generate_single_subtopic(topic_name: str, subtopic_name: str):
-        async with sem:
-            prompt = f"""{base_prompt}
-            
-            Batch Context: {batch_name}
-            Topic Group: {topic_name}
-            Subtopic: {subtopic_name}
-            
-            {f"Additional instructions: {additional_prompt}" if additional_prompt else ""}
-            
-            Slide Structure Requirements:
-            - SLIDE 1 (Must be titled exactly "Lesson Objectives"): Outline the specific learning outcomes for this subtopic in 3-5 concise bullets.
-            - SLIDES 2 to N (Content Slides, 2-4 slides): Break down the concept step-by-step. Provide deep-dive explanations, conceptual diagrams described in text, or clean code snippets in markdown format (using code blocks). IMPORTANT: Always put code blocks on separate lines and include newlines inside the code block so it is readable and properly formatted, rather than compressing it to a single line.
-            - FINAL SLIDE (Must be titled exactly "Key takeaways"): Highlight the 3-5 critical takeaways from this subtopic.
-            """
-            
-            try:
-                result = await structured_llm.ainvoke(prompt)
-                slides_list = []
-                for s in result.slides:
-                    slides_list.append({
-                        "title": s.title,
-                        "bullets": s.bullets
-                    })
-                return {
-                    "name": subtopic_name,
-                    "slides": slides_list
-                }
-            except Exception as e:
-                print(f"[Error] AI generation failed for subtopic '{subtopic_name}': {e}")
-                # Fallback to avoid complete failure
-                return {
-                    "name": subtopic_name,
-                    "slides": [
-                        {
-                            "title": "Lesson Objectives",
-                            "bullets": [f"Understand {subtopic_name}", "Learn core concepts of this subtopic"]
-                        },
-                        {
-                            "title": "Core Concepts",
-                            "bullets": ["Due to an AI service rate limit or interruption, content generation was skipped.", "Please trigger re-generation of the agent to fetch slides."]
-                        },
-                        {
-                            "title": "Key takeaways",
-                            "bullets": [f"Review {subtopic_name} documentation", "Experiment with code locally"]
-                        }
-                    ]
-                }
-                
     async def process_topic(topic_item: dict):
         topic_name = topic_item["name"]
         subtopic_names = topic_item["subtopics"]
         day_numbers = topic_item.get("dayNumbers", [])
         
-        # Parallel generation of all subtopics in this topic group
-        tasks = [generate_single_subtopic(topic_name, sub) for sub in subtopic_names]
-        subtopic_contents = await asyncio.gather(*tasks)
+        async with sem:
+            prompt = f"""{base_prompt}
+            
+            Batch Context: {batch_name}
+            Topic Group: {topic_name}
+            Subtopics to generate slides for: {', '.join(subtopic_names)}
+            
+            {f"Additional instructions: {additional_prompt}" if additional_prompt else ""}
+            
+            For EACH subtopic in the list, you MUST generate a complete slide deck under the corresponding Subtopic entry.
+            
+            Slide Structure Requirements (per Subtopic):
+            - SLIDE 1 (Must be titled exactly "Lesson Objectives"): Outline the specific learning outcomes for this subtopic in 3-5 concise bullets.
+            - SLIDES 2 to N (Content Slides, 2-3 slides): Break down the concept step-by-step. Keep explanations extremely concise to save tokens. Use short bullets. Provide clean code snippets in markdown format (using code blocks) on separate lines with newlines.
+            - FINAL SLIDE (Must be titled exactly "Key takeaways"): Highlight the 3-5 critical takeaways from this subtopic.
+            """
+            
+            try:
+                result = await structured_llm.ainvoke(prompt)
+                subtopic_contents = []
+                for sub in result.subtopics:
+                    slides_list = []
+                    for s in sub.slides:
+                        slides_list.append({
+                            "title": s.title,
+                            "bullets": s.bullets
+                        })
+                    subtopic_contents.append({
+                        "name": sub.name,
+                        "slides": slides_list
+                    })
+                
+                # Check for missing subtopics and add placeholder fallback
+                generated_names = {s["name"].lower() for s in subtopic_contents}
+                for original_sub in subtopic_names:
+                    if original_sub.lower() not in generated_names:
+                        subtopic_contents.append({
+                            "name": original_sub,
+                            "slides": [
+                                {
+                                    "title": "Lesson Objectives",
+                                    "bullets": [f"Understand {original_sub}", "Learn core concepts of this subtopic"]
+                                },
+                                {
+                                    "title": "Core Concepts",
+                                    "bullets": ["Slide content generation skipped. Please check course resources."]
+                                },
+                                {
+                                    "title": "Key takeaways",
+                                    "bullets": [f"Review {original_sub} documentation"]
+                                }
+                            ]
+                        })
+            except Exception as e:
+                print(f"[Error] AI slide generation failed for topic group '{topic_name}': {e}")
+                # Fallback to avoid complete failure
+                subtopic_contents = []
+                for sub in subtopic_names:
+                    subtopic_contents.append({
+                        "name": sub,
+                        "slides": [
+                            {
+                                "title": "Lesson Objectives",
+                                "bullets": [f"Understand {sub}", "Learn core concepts of this subtopic"]
+                            },
+                            {
+                                "title": "Core Concepts",
+                                "bullets": ["Due to an AI service interruption, content generation was skipped.", "Please trigger re-generation of the agent to fetch slides."]
+                            },
+                            {
+                                "title": "Key takeaways",
+                                "bullets": [f"Review {sub} documentation", "Experiment with code locally"]
+                            }
+                        ]
+                    })
         
         result = {
             "topic": topic_name,
@@ -189,7 +216,7 @@ Your task is to generate highly educational, structured, and visually engaging t
             result["dayNumbers"] = day_numbers
         return result
 
-    # Parallel generation across all topic groups
+    # Parallel generation across all topic groups (now only 7 calls instead of 35!)
     topic_tasks = [process_topic(t) for t in topics]
     generated_content = await asyncio.gather(*topic_tasks)
     

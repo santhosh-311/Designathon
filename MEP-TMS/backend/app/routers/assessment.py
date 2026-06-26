@@ -458,6 +458,7 @@ async def generate_assessment_questions(
     2. The 'topic' field in the output MUST exactly match the required assessment name (e.g. "GA1", "Assessment 1", "MCQ 1", etc.) character-for-character.
     3. Each question must have exactly 4 choices (options) and exactly 1 correctAnswer.
     4. The 'correctAnswer' field MUST match one of the string options in the 'options' list exactly.
+    5. Keep questions, options, and correctness keys concise to minimize generated output tokens.
     """
     
     # 5. Call Azure OpenAI via Langchain
@@ -739,6 +740,7 @@ async def generate_coding_questions(
     5. Each challenge must include exactly 4 test cases under the 'testCases' list.
     6. At least 2 test cases MUST be hidden (isHidden=True) which check edge cases or general cases for automatic grading.
     7. At least 2 test cases MUST be visible (isHidden=False) and one of them MUST match the sampleInput and sampleOutput exactly.
+    8. Keep problem statements, constraints, and test case values highly concise and focused to minimize generated output tokens.
     """
     
     # 5. Call Azure OpenAI via Langchain

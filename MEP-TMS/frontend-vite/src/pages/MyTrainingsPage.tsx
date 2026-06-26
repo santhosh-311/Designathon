@@ -4,6 +4,7 @@ import { BookOpen, Calendar, User, Clock, AlertCircle, Play, ChevronLeft, Chevro
 import { useAuth } from '@/context/AuthContext';
 import api from '@/services/api';
 import toast from 'react-hot-toast';
+import MorphLoader from '@/components/MorphLoader';
 
 export default function MyTrainingsPage() {
   const { user } = useAuth();
@@ -268,11 +269,7 @@ export default function MyTrainingsPage() {
   };
 
   if (loading) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh' }}>
-        <p style={{ fontSize: 16, color: 'var(--text-secondary)', fontWeight: 600 }}>Loading your classroom...</p>
-      </div>
-    );
+    return <MorphLoader minHeight="60vh" text="Loading your classroom..." />;
   }
 
   if (!batchDetails) {

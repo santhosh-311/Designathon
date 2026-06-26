@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Plus, Trash2, Search, User, Edit3, Calendar, BookOpen, Sliders, AlertCircle, Sparkles } from 'lucide-react';
+import { X, Plus, Trash2, Search, User, Edit3, Calendar, BookOpen, Sliders, AlertCircle, Sparkles, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useBatches, Batch } from '@/context/BatchContext';
 import { useNotifications } from '@/context/NotificationContext';
 import MorphLoader from '@/components/MorphLoader';
@@ -36,6 +36,7 @@ export default function EditBatchModal({ isOpen, onClose, batch }: EditBatchModa
   const [sizeLimit, setSizeLimit] = useState<number | ''>('');
   const [minBatchSizeLimit, setMinBatchSizeLimit] = useState(30);
   const [topics, setTopics] = useState<TopicInput[]>([{ name: '', subtopics: [''] }]);
+  const [currentTopicPage, setCurrentTopicPage] = useState(0);
   
   // Trainer search & select states
   const [availableTrainers, setAvailableTrainers] = useState<Trainer[]>([]);
@@ -67,6 +68,7 @@ export default function EditBatchModal({ isOpen, onClose, batch }: EditBatchModa
         }));
         
         setTopics(mappedTopics);
+        setCurrentTopicPage(0);
         toast.success('AI curriculum generated successfully!');
       } else {
         toast.error('Failed to parse AI curriculum. Please try again.');
@@ -88,6 +90,7 @@ export default function EditBatchModal({ isOpen, onClose, batch }: EditBatchModa
       setStartDate(batch.startDate);
       setEndDate(batch.endDate);
       setSizeLimit(batch.sizeLimit === null ? '' : batch.sizeLimit);
+      setCurrentTopicPage(0);
       
       // Parse serialized topics back into name & subtopics
       if (batch.topics && batch.topics.length > 0) {
@@ -176,6 +179,7 @@ export default function EditBatchModal({ isOpen, onClose, batch }: EditBatchModa
 
   const handleAddTopic = () => {
     setTopics([...topics, { name: '', subtopics: [''] }]);
+    setCurrentTopicPage(topics.length);
   };
 
   const handleTopicNameChange = (index: number, value: string) => {
@@ -188,8 +192,10 @@ export default function EditBatchModal({ isOpen, onClose, batch }: EditBatchModa
     const newTopics = topics.filter((_, i) => i !== index);
     if (newTopics.length === 0) {
       setTopics([{ name: '', subtopics: [''] }]);
+      setCurrentTopicPage(0);
     } else {
       setTopics(newTopics);
+      setCurrentTopicPage(prev => Math.max(0, Math.min(newTopics.length - 1, prev)));
     }
   };
 
@@ -577,146 +583,212 @@ export default function EditBatchModal({ isOpen, onClose, batch }: EditBatchModa
 
               {/* Topics Container */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-                {topics.map((topic, topicIdx) => (
-                  <div 
-                    key={topicIdx} 
-                    style={{ 
-                      border: '1px solid var(--border-color)', 
-                      borderRadius: 16, 
-                      padding: 20, 
-                      background: 'var(--bg-dropdown)',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: 16,
-                      boxShadow: 'var(--shadow-card)',
-                      borderLeft: '4px solid var(--powder-blue)',
-                      position: 'relative'
-                    }}
-                  >
-                    <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
-                      <div style={{ flex: 1 }}>
-                        <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>
-                          Topic Group {topicIdx + 1} Name
-                        </label>
-                        <input 
-                          type="text" 
-                          value={topic.name} 
-                          onChange={(e) => handleTopicNameChange(topicIdx, e.target.value)}
-                          placeholder="e.g. Core Fundamentals"
-                          required
-                          style={{ 
-                            width: '100%', padding: '11px 14px', borderRadius: 10, 
-                            border: '1px solid var(--border-color)', outline: 'none', fontSize: 13.5,
-                            background: 'var(--bg-card)', color: 'var(--text-primary)', fontWeight: 700,
-                            transition: 'all 0.15s ease-in-out'
-                          }}
-                          onFocus={(e) => {
-                            e.target.style.borderColor = 'var(--powder-blue)';
-                            e.target.style.boxShadow = '0 0 0 3px var(--powder-blue-glow)';
-                          }}
-                          onBlur={(e) => {
-                            e.target.style.borderColor = 'var(--border-color)';
-                            e.target.style.boxShadow = 'none';
-                          }}
-                        />
-                      </div>
-                      
-                      {topics.length > 1 && (
-                        <button 
-                          type="button" 
-                          onClick={() => handleRemoveTopic(topicIdx)}
-                          style={{ 
-                            padding: 10, background: 'rgba(239, 68, 68, 0.08)', color: '#ef4444', 
-                            border: 'none', borderRadius: 10, cursor: 'pointer', transition: 'all 0.2s',
-                            marginTop: 18
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.background = 'rgba(239, 68, 68, 0.15)';
-                            e.currentTarget.style.transform = 'scale(1.02)';
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.background = 'rgba(239, 68, 68, 0.08)';
-                            e.currentTarget.style.transform = 'scale(1)';
-                          }}
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      )}
-                    </div>
+                {topics.length > 0 && (() => {
+                  const topicIdx = Math.min(currentTopicPage, topics.length - 1);
+                  const topic = topics[topicIdx] || topics[0];
+                  if (!topic) return null;
 
-                    {/* Subtopics Section */}
-                    <div style={{ 
-                      marginLeft: 14, 
-                      borderLeft: '2px dashed var(--border-color)', 
-                      paddingLeft: 20, 
-                      display: 'flex', 
-                      flexDirection: 'column', 
-                      gap: 10 
-                    }}>
-                      <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Subtopics</label>
-                      
-                      {topic.subtopics.map((subtopic, subIdx) => (
-                        <div key={subIdx} style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                  return (
+                    <div 
+                      key={topicIdx} 
+                      style={{ 
+                        border: '1px solid var(--border-color)', 
+                        borderRadius: 16, 
+                        padding: 20, 
+                        background: 'var(--bg-dropdown)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 16,
+                        boxShadow: 'var(--shadow-card)',
+                        borderLeft: '4px solid var(--powder-blue)',
+                        position: 'relative'
+                      }}
+                    >
+                      <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
+                        <div style={{ flex: 1 }}>
+                          <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>
+                            Topic Group {topicIdx + 1} Name
+                          </label>
                           <input 
                             type="text" 
-                            value={subtopic} 
-                            onChange={(e) => handleSubtopicChange(topicIdx, subIdx, e.target.value)}
-                            placeholder={`Add Subtopic ${subIdx + 1}`}
+                            value={topic.name} 
+                            onChange={(e) => handleTopicNameChange(topicIdx, e.target.value)}
+                            placeholder="e.g. Core Fundamentals"
+                            required
                             style={{ 
-                              flex: 1, padding: '8px 12px', borderRadius: 8, 
-                              border: '1px solid var(--border-color)', outline: 'none', fontSize: 13,
-                              background: 'var(--bg-card)', color: 'var(--text-primary)', fontWeight: 500,
+                              width: '100%', padding: '11px 14px', borderRadius: 10, 
+                              border: '1px solid var(--border-color)', outline: 'none', fontSize: 13.5,
+                              background: 'var(--bg-card)', color: 'var(--text-primary)', fontWeight: 700,
                               transition: 'all 0.15s ease-in-out'
                             }}
                             onFocus={(e) => {
                               e.target.style.borderColor = 'var(--powder-blue)';
-                              e.target.style.boxShadow = '0 0 0 2px var(--powder-blue-glow)';
+                              e.target.style.boxShadow = '0 0 0 3px var(--powder-blue-glow)';
                             }}
                             onBlur={(e) => {
                               e.target.style.borderColor = 'var(--border-color)';
                               e.target.style.boxShadow = 'none';
                             }}
                           />
-                          {topic.subtopics.length > 1 && (
-                            <button 
-                              type="button" 
-                              onClick={() => handleRemoveSubtopic(topicIdx, subIdx)}
-                              style={{ 
-                                padding: 6, background: 'transparent', color: 'var(--text-secondary)', 
-                                border: 'none', borderRadius: 8, cursor: 'pointer', transition: 'all 0.2s' 
-                              }}
-                              onMouseEnter={(e) => {
-                                e.currentTarget.style.color = '#ef4444';
-                                e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)';
-                              }}
-                              onMouseLeave={(e) => {
-                                e.currentTarget.style.color = 'var(--text-secondary)';
-                                e.currentTarget.style.background = 'transparent';
-                              }}
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          )}
                         </div>
-                      ))}
-                      
-                      <button 
-                        type="button" 
-                        onClick={() => handleAddSubtopic(topicIdx)}
-                        style={{ 
-                          alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: 6, 
-                          fontSize: 12.5, color: 'var(--powder-blue)', background: 'transparent', 
-                          border: 'none', cursor: 'pointer', fontWeight: 700, marginTop: 4, transition: 'all 0.2s' 
-                        }}
-                        onMouseEnter={(e) => e.currentTarget.style.color = 'var(--powder-blue)'}
-                        onMouseLeave={(e) => e.currentTarget.style.color = 'var(--powder-blue)'}
-                      >
-                        <Plus size={14} strokeWidth={2.5} /> Add Subtopic
-                      </button>
+                        
+                        {topics.length > 1 && (
+                          <button 
+                            type="button" 
+                            onClick={() => handleRemoveTopic(topicIdx)}
+                            style={{ 
+                              padding: 10, background: 'rgba(239, 68, 68, 0.08)', color: '#ef4444', 
+                              border: 'none', borderRadius: 10, cursor: 'pointer', transition: 'all 0.2s',
+                              marginTop: 18
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = 'rgba(239, 68, 68, 0.15)';
+                              e.currentTarget.style.transform = 'scale(1.02)';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = 'rgba(239, 68, 68, 0.08)';
+                              e.currentTarget.style.transform = 'scale(1)';
+                            }}
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Subtopics Section */}
+                      <div style={{ 
+                        marginLeft: 14, 
+                        borderLeft: '2px dashed var(--border-color)', 
+                        paddingLeft: 20, 
+                        display: 'flex', 
+                        flexDirection: 'column', 
+                        gap: 10 
+                      }}>
+                        <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Subtopics</label>
+                        
+                        {topic.subtopics.map((subtopic, subIdx) => (
+                          <div key={subIdx} style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                            <input 
+                              type="text" 
+                              value={subtopic} 
+                              onChange={(e) => handleSubtopicChange(topicIdx, subIdx, e.target.value)}
+                              placeholder={`Add Subtopic ${subIdx + 1}`}
+                              style={{ 
+                                flex: 1, padding: '8px 12px', borderRadius: 8, 
+                                border: '1px solid var(--border-color)', outline: 'none', fontSize: 13,
+                                background: 'var(--bg-card)', color: 'var(--text-primary)', fontWeight: 500,
+                                transition: 'all 0.15s ease-in-out'
+                              }}
+                              onFocus={(e) => {
+                                e.target.style.borderColor = 'var(--powder-blue)';
+                                e.target.style.boxShadow = '0 0 0 2px var(--powder-blue-glow)';
+                              }}
+                              onBlur={(e) => {
+                                e.target.style.borderColor = 'var(--border-color)';
+                                e.target.style.boxShadow = 'none';
+                              }}
+                            />
+                            {topic.subtopics.length > 1 && (
+                              <button 
+                                type="button" 
+                                onClick={() => handleRemoveSubtopic(topicIdx, subIdx)}
+                                style={{ 
+                                  padding: 6, background: 'transparent', color: 'var(--text-secondary)', 
+                                  border: 'none', borderRadius: 8, cursor: 'pointer', transition: 'all 0.2s' 
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.color = '#ef4444';
+                                  e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)';
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.color = 'var(--text-secondary)';
+                                  e.currentTarget.style.background = 'transparent';
+                                }}
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                        
+                        <button 
+                          type="button" 
+                          onClick={() => handleAddSubtopic(topicIdx)}
+                          style={{ 
+                            alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: 6, 
+                            fontSize: 12.5, color: 'var(--powder-blue)', background: 'transparent', 
+                            border: 'none', cursor: 'pointer', fontWeight: 700, marginTop: 4, transition: 'all 0.2s' 
+                          }}
+                          onMouseEnter={(e) => e.currentTarget.style.color = 'var(--powder-blue)'}
+                          onMouseLeave={(e) => e.currentTarget.style.color = 'var(--powder-blue)'}
+                        >
+                          <Plus size={14} strokeWidth={2.5} /> Add Subtopic
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })()}
               </div>
+
+              {/* Pagination Controls */}
+              {topics.length > 1 && (
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  background: 'var(--bg-card)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: 14,
+                  padding: '10px 16px',
+                  marginTop: -10
+                }}>
+                  <button
+                    type="button"
+                    disabled={currentTopicPage === 0}
+                    onClick={() => setCurrentTopicPage(prev => Math.max(0, prev - 1))}
+                    style={{
+                      background: 'transparent',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: 8,
+                      padding: '6px 12px',
+                      fontSize: 12.5,
+                      fontWeight: 700,
+                      color: currentTopicPage === 0 ? 'var(--text-muted)' : 'var(--text-secondary)',
+                      cursor: currentTopicPage === 0 ? 'not-allowed' : 'pointer',
+                      transition: 'all 0.15s',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 4
+                    }}
+                  >
+                    <ChevronLeft size={14} /> Previous
+                  </button>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>
+                    Topic Group {currentTopicPage + 1} of {topics.length}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={currentTopicPage === topics.length - 1}
+                    onClick={() => setCurrentTopicPage(prev => Math.min(topics.length - 1, prev + 1))}
+                    style={{
+                      background: 'transparent',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: 8,
+                      padding: '6px 12px',
+                      fontSize: 12.5,
+                      fontWeight: 700,
+                      color: currentTopicPage === topics.length - 1 ? 'var(--text-muted)' : 'var(--text-secondary)',
+                      cursor: currentTopicPage === topics.length - 1 ? 'not-allowed' : 'pointer',
+                      transition: 'all 0.15s',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 4
+                    }}
+                  >
+                    Next <ChevronRight size={14} />
+                  </button>
+                </div>
+              )}
               
               <button 
                 type="button" 

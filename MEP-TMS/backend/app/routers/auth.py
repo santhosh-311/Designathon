@@ -58,11 +58,14 @@ async def login(credentials: LoginRequest):
         }
     )
     
-    # Update last login time in DB
+    # Update last login and reset is_first_login time in DB
     try:
         from datetime import datetime as datetime_cls
         now_str = datetime_cls.utcnow().isoformat()
-        db.table("users").update({"last_login": now_str}).eq("id", user["id"]).execute()
+        update_payload = {"last_login": now_str}
+        if user.get("is_first_login"):
+            update_payload["is_first_login"] = False
+        db.table("users").update(update_payload).eq("id", user["id"]).execute()
         user["last_login"] = now_str
     except Exception as e:
         print(f"Failed to update last login: {e}")
@@ -161,11 +164,14 @@ async def trainee_login(credentials: TraineeLoginRequest):
         }
     )
     
-    # Update last login time in DB
+    # Update last login and reset is_first_login time in DB
     try:
         from datetime import datetime as datetime_cls
         now_str = datetime_cls.utcnow().isoformat()
-        db.table("users").update({"last_login": now_str}).eq("id", user["id"]).execute()
+        update_payload = {"last_login": now_str}
+        if user.get("is_first_login"):
+            update_payload["is_first_login"] = False
+        db.table("users").update(update_payload).eq("id", user["id"]).execute()
         user["last_login"] = now_str
     except Exception as e:
         print(f"Failed to update last login: {e}")

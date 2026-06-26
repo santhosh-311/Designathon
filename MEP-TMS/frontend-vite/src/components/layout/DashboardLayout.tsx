@@ -50,10 +50,6 @@ export default function DashboardLayout() {
     setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
   };
 
-  if (user?.isFirstLogin && user?.role !== 'ADMIN') {
-    return <FirstTimePasswordReset />;
-  }
-
 
   return (
     <ProtectedRoute>
@@ -165,6 +161,7 @@ export default function DashboardLayout() {
             <Outlet />
           </main>
         </div>
+        {user?.isFirstLogin && user?.role !== 'ADMIN' && <FirstTimePasswordReset />}
       </div>
     </ProtectedRoute>
   );

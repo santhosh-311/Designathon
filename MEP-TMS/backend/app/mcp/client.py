@@ -111,20 +111,6 @@ async def run_coordinator_agent(user_prompt: str, current_user: dict, chat_histo
             "you MUST always include a filter on `batch_id` matching your allowed batch UUID(s) (e.g. `WHERE batch_id = '...'` or `WHERE batch_id IN ('...', '...')`).\n"
             "- Any query that does not filter by your allowed batch ID(s) or your own user ID will be blocked by the server security layer."
         )
-    messages.append({"role": "system", "content": system_instruction})
-    
-    if chat_history:
-        for h in chat_history:
-            messages.append({
-                "role": h["role"], # user or assistant
-                "content": h["content"]
-            })
-            
-    messages.append({
-        "role": "user",
-        "content": user_prompt
-    })
-    
     raw_client = AsyncOpenAI(
         api_key=settings.AZURE_OPENAI_API_KEY,
         base_url=settings.AZURE_OPENAI_ENDPOINT
@@ -134,6 +120,60 @@ async def run_coordinator_agent(user_prompt: str, current_user: dict, chat_histo
         client = wrap_openai(raw_client)
     else:
         client = raw_client
+
+    # ── History Summarization ───────────────────────────────────────────────
+    summarized_history = ""
+    recent_history = []
+    
+    if chat_history and len(chat_history) > 6:
+        # Keep the last 4 messages as active context, summarize the rest
+        messages_to_summarize = chat_history[:-4]
+        recent_history = chat_history[-4:]
+        
+        try:
+            summary_prompt = (
+                "You are an AI system assistant. Summarize the following previous conversation history between "
+                "the User and the Assistant in a single concise paragraph. Focus on the main topics discussed, "
+                "specific batch IDs, and database queries executed. Keep the summary dense, short, and technical:\n\n"
+            )
+            for msg in messages_to_summarize:
+                role_label = "User" if msg['role'] == "user" else "Assistant"
+                summary_prompt += f"{role_label}: {msg['content']}\n"
+                
+            # Perform summarization using Azure OpenAI client
+            summary_res = await raw_client.chat.completions.create(
+                model=settings.AZURE_OPENAI_DEPLOYMENT,
+                messages=[{"role": "user", "content": summary_prompt}],
+                temperature=0.1,
+                max_completion_tokens=250
+            )
+            summarized_history = summary_res.choices[0].message.content or ""
+        except Exception as e:
+            print(f"[Error] Failed to summarize chat history: {e}. Falling back to full history.")
+            recent_history = chat_history
+    elif chat_history:
+        recent_history = chat_history
+
+    # Assemble messages list ensuring static instructions are at the beginning for prompt prefix caching
+    messages = []
+    messages.append({"role": "system", "content": system_instruction})
+    
+    if summarized_history:
+        messages.append({
+            "role": "system",
+            "content": f"The following is a summary of the earlier part of this conversation:\n{summarized_history}"
+        })
+        
+    for h in recent_history:
+        messages.append({
+            "role": h["role"],
+            "content": h["content"]
+        })
+        
+    messages.append({
+        "role": "user",
+        "content": user_prompt
+    })
 
     
     executed_tools_log = []

@@ -184,6 +184,22 @@ export default function LeaderboardPage() {
     return activeTab === 'batch' ? [...leaderboardData] : [...globalData];
   }, [activeTab, leaderboardData, globalData]);
 
+  const hasStandingsData = useMemo(() => {
+    if (activeData.length === 0) return false;
+    return activeData.some(row => {
+      const overall = parseFloat(row.overallScore);
+      const assessment = parseFloat(row.assessmentScore);
+      const bytes = parseInt(row.bytesTotal);
+      const bits = parseInt(row.bitsAccumulated);
+      return (
+        (!isNaN(overall) && overall > 0) ||
+        (!isNaN(assessment) && assessment > 0) ||
+        (!isNaN(bytes) && bytes > 0) ||
+        (!isNaN(bits) && bits > 0)
+      );
+    });
+  }, [activeData]);
+
   const totalRecords = activeData.length;
   const totalPages = Math.ceil(totalRecords / 10) || 1;
   const paginatedActiveData = useMemo(() => {
@@ -324,7 +340,7 @@ export default function LeaderboardPage() {
       )}
 
       {/* TRAINEE SUMMARY HERO */}
-      {isTrainee && traineeRankInfo && activeTab === 'batch' && (
+      {isTrainee && traineeRankInfo && activeTab === 'batch' && hasStandingsData && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16 }}>
           {/* Card 1: Standing */}
           <div className="card card-glow-orange card-rank" style={{ padding: 18 }}>
@@ -371,7 +387,7 @@ export default function LeaderboardPage() {
       )}
 
       {/* NO PERFORMANCE DATA PLACEHOLDER */}
-      {activeData.length === 0 ? (
+      {!hasStandingsData ? (
         <div className="card card-glow-orange" style={{ padding: 64, textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
           <Trophy size={48} color="var(--text-muted)" />
           <h3 style={{ fontSize: 18, color: 'var(--text-primary)', fontWeight: 700 }}>No Performance Records</h3>
